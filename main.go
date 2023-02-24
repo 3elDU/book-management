@@ -34,8 +34,8 @@ type Book struct {
 	Name     string `json:"name" db:"name"`
 	Author   string `json:"author" db:"author"`
 	Pages    int    `json:"pages" db:"pages"`
-	GenreID  int    `db:"genre_id"`
-	Filename string `db:"filename"`
+	GenreID  int    `json:"genre_id" db:"genre_id"`
+	Filename string `json:"filename" db:"filename"`
 }
 
 func get_genre_name(db *sqlx.DB, id int) string {
@@ -58,11 +58,12 @@ func main() {
 		}
 
 		response := `<table>
-			<tr>
+			<tr style="font-weight: bold">
 				<td>Name</td>
 				<td>Author</td>
 				<td>Pages</td>
 				<td>Genre</td>
+				<td>Filename</td>
 			</tr>`
 		var row Book
 
@@ -73,8 +74,8 @@ func main() {
 				ctx.AbortWithStatus(http.StatusInternalServerError)
 			}
 			response += fmt.Sprintf(
-				"<tr><td>%v</td><td>%v</td><td>%v</td><td>%v</td></tr>",
-				row.Name, row.Author, row.Pages, get_genre_name(db, row.GenreID),
+				"<tr><td>%v</td><td>%v</td><td>%v</td><td>%v</td><td>%v</td></tr>",
+				row.Name, row.Author, row.Pages, get_genre_name(db, row.GenreID), row.Filename,
 			)
 		}
 		response += "</table>"
@@ -120,8 +121,16 @@ func main() {
 			return
 		}
 
-		res, err := db.Exec("INSERT INTO books (name, author, pages) VALUES ($1, $2, $3)", book.Name, book.Author, book.Pages)
-		log.Println(res, err)
+		_, err := db.Exec("INSERT INTO books (name, author, pages, genre_id) VALUES ($1, $2, $3, $4)",
+			book.Name, book.Author, book.Pages, book.GenreID)
+		if err != nil {
+			ctx.AbortWithStatus(http.StatusBadRequest)
+		}
+	})
+
+	r.POST("/new_genre/:name", func(ctx *gin.Context) {
+		name := ctx.Param("name")
+		db.Exec("INSERT INTO genres (name) VALUES ($1)", name)
 	})
 
 	r.Run()
