@@ -1,22 +1,22 @@
 package main
 
 import (
-	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-
+	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 )
 
-func connect_db() *sql.DB {
-	db, err := sql.Open("postgres", "postgres://postgres:postgres@localhost/postgres?sslmode=disable")
+func connect_db() *sqlx.DB {
+	db, err := sqlx.Connect("postgres", "postgres://postgres:postgres@localhost/postgres?sslmode=disable")
 	log.Println(db, err)
 	return db
 }
 
-func create_table(db *sql.DB) {
+func create_table(db *sqlx.DB) {
 	res, err := db.Exec("DROP TABLE IF EXISTS books")
 	log.Println(res, err)
 
@@ -32,10 +32,10 @@ func create_table(db *sql.DB) {
 
 type Book struct {
 	ID       string
-	Name     string `json:"name"`
-	Author   string `json:"author"`
-	Pages    int    `json:"pages"`
-	Filename string
+	Name     string `json:"name" db:"name"`
+	Author   string `json:"author" db:"author"`
+	Pages    int    `json:"pages" db:"pages"`
+	Filename string `db:"filename"`
 }
 
 func main() {
@@ -46,6 +46,37 @@ func main() {
 
 	r.GET("/", func(ctx *gin.Context) {
 		ctx.String(http.StatusOK, "Hello, world!")
+	})
+
+	r.GET("/books", func(ctx *gin.Context) {
+		rows, err := db.Queryx("SELECT name, author, pages FROM books")
+		if err != nil {
+			log.Printf("/books db.Query() error - %v", err)
+			ctx.AbortWithStatus(400)
+		}
+
+		response := `<table>
+			<tr>
+				<td>Name</td>
+				<td>Author</td>
+				<td>Pages</td>
+			</tr>`
+		var row Book
+
+		for rows.Next() {
+			err := rows.StructScan(&row)
+			if err != nil {
+				log.Printf("rows.StructScan() error - %v", err)
+				ctx.AbortWithStatus(http.StatusInternalServerError)
+			}
+			response += fmt.Sprintf(
+				"<tr><td>%v</td><td>%v</td><td>%v</td></tr>",
+				row.Name, row.Author, row.Pages,
+			)
+		}
+		response += "</table>"
+
+		ctx.Data(http.StatusOK, "text/html", []byte(response))
 	})
 
 	r.POST("/new_book", func(ctx *gin.Context) {
