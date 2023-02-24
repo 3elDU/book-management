@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
@@ -11,23 +12,21 @@ import (
 )
 
 func connect_db() *sqlx.DB {
-	db, err := sqlx.Connect("postgres", "postgres://postgres:postgres@localhost/postgres?sslmode=disable")
-	log.Println(db, err)
+	db := sqlx.MustConnect("postgres", "postgres://postgres:postgres@localhost/postgres?sslmode=disable")
 	return db
 }
 
-func create_table(db *sqlx.DB) {
-	res, err := db.Exec("DROP TABLE IF EXISTS books")
-	log.Println(res, err)
+func create_tables(db *sqlx.DB) {
+	db.MustExec("DROP TABLE IF EXISTS shelves, genres, books, book_shelf")
 
-	res, err = db.Exec(`CREATE TABLE books (
-		id SERIAL PRIMARY KEY,
-		name VARCHAR(128) NOT NULL,
-		author VARCHAR(64) NOT NULL,
-		pages INT NOT NULL,
-		filename TEXT
-	);`)
-	log.Println(res, err)
+	schema, _ := os.ReadFile("schema.sql")
+	db.MustExec(string(schema))
+
+	if mode, _ := os.LookupEnv("GIN_MODE"); mode != "release" {
+		// if in debug mode, populate the database with some default values
+		expr, _ := os.ReadFile("debug.sql")
+		db.MustExec(string(expr))
+	}
 }
 
 type Book struct {
@@ -35,21 +34,24 @@ type Book struct {
 	Name     string `json:"name" db:"name"`
 	Author   string `json:"author" db:"author"`
 	Pages    int    `json:"pages" db:"pages"`
+	GenreID  int    `db:"genre_id"`
 	Filename string `db:"filename"`
+}
+
+func get_genre_name(db *sqlx.DB, id int) string {
+	var genre string
+	db.QueryRow("SELECT name FROM genres WHERE id=$1", id).Scan(&genre)
+	return genre
 }
 
 func main() {
 	db := connect_db()
-	create_table(db)
+	create_tables(db)
 
 	r := gin.Default()
 
-	r.GET("/", func(ctx *gin.Context) {
-		ctx.String(http.StatusOK, "Hello, world!")
-	})
-
 	r.GET("/books", func(ctx *gin.Context) {
-		rows, err := db.Queryx("SELECT name, author, pages FROM books")
+		rows, err := db.Queryx("SELECT * FROM books")
 		if err != nil {
 			log.Printf("/books db.Query() error - %v", err)
 			ctx.AbortWithStatus(400)
@@ -60,6 +62,7 @@ func main() {
 				<td>Name</td>
 				<td>Author</td>
 				<td>Pages</td>
+				<td>Genre</td>
 			</tr>`
 		var row Book
 
@@ -70,8 +73,8 @@ func main() {
 				ctx.AbortWithStatus(http.StatusInternalServerError)
 			}
 			response += fmt.Sprintf(
-				"<tr><td>%v</td><td>%v</td><td>%v</td></tr>",
-				row.Name, row.Author, row.Pages,
+				"<tr><td>%v</td><td>%v</td><td>%v</td><td>%v</td></tr>",
+				row.Name, row.Author, row.Pages, get_genre_name(db, row.GenreID),
 			)
 		}
 		response += "</table>"
