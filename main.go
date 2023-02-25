@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
@@ -17,12 +19,12 @@ func connect_db() *sqlx.DB {
 }
 
 func create_tables(db *sqlx.DB) {
-	db.MustExec("DROP TABLE IF EXISTS shelves, genres, books, book_shelf")
-
-	schema, _ := os.ReadFile("schema.sql")
-	db.MustExec(string(schema))
-
 	if mode, _ := os.LookupEnv("GIN_MODE"); mode != "release" {
+		db.MustExec("DROP TABLE IF EXISTS shelves, genres, books, book_shelf")
+
+		schema, _ := os.ReadFile("schema.sql")
+		db.MustExec(string(schema))
+
 		// if in debug mode, populate the database with some default values
 		expr, _ := os.ReadFile("debug.sql")
 		db.MustExec(string(expr))
@@ -49,6 +51,8 @@ func main() {
 	create_tables(db)
 
 	r := gin.Default()
+
+	r.Static("/static/", "./public")
 
 	r.GET("/books", func(ctx *gin.Context) {
 		rows, err := db.Queryx("SELECT * FROM books")
@@ -81,6 +85,22 @@ func main() {
 		response += "</table>"
 
 		ctx.Data(http.StatusOK, "text/html", []byte(response))
+	})
+
+	r.GET("/download/:bookid", func(ctx *gin.Context) {
+		id, err := strconv.Atoi(ctx.Param("bookid"))
+		if err != nil {
+			ctx.AbortWithError(http.StatusBadRequest, err)
+		}
+
+		var filename string
+		db.QueryRow("SELECT filename FROM books WHERE id=$1", id).Scan(&filename)
+
+		if filename == "" {
+			ctx.AbortWithStatus(http.StatusNotFound)
+		}
+
+		ctx.File(filename)
 	})
 
 	r.GET("/shelves", func(ctx *gin.Context) {
@@ -126,6 +146,29 @@ func main() {
 		if err != nil {
 			ctx.AbortWithStatus(http.StatusBadRequest)
 		}
+	})
+
+	r.POST("/upload", func(ctx *gin.Context) {
+		name := ctx.PostForm("name")
+		author := ctx.PostForm("author")
+
+		file, err := ctx.FormFile("file")
+		if err != nil {
+			log.Printf("/upload ctx.FormFile() error - %v", err)
+			ctx.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+
+		filename := filepath.Join("./uploads", filepath.Base(file.Filename))
+		if err := ctx.SaveUploadedFile(file, filename); err != nil {
+			log.Printf("/upload ctx.SaveUploadedFile() error - %v", err)
+			ctx.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+
+		db.Exec("INSERT INTO books (name, author, pages, filename) VALUES ($1, $2, $3, $4)",
+			name, author, -1, filename)
+		ctx.String(http.StatusOK, "Successfully uploaded a file")
 	})
 
 	r.POST("/new_genre/:name", func(ctx *gin.Context) {
