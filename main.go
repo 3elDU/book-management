@@ -26,7 +26,7 @@ func connect_db() *sqlx.DB {
 }
 
 func create_tables(db *sqlx.DB) {
-	if mode, _ := os.LookupEnv("GIN_MODE"); mode != "release" {
+	if mode := os.Getenv("GIN_MODE"); mode != "release" {
 		db.MustExec("DROP TABLE IF EXISTS shelves, genres, books, book_shelf")
 
 		schema, _ := os.ReadFile("schema.sql")
@@ -55,6 +55,11 @@ func get_genre_name(db *sqlx.DB, id int) string {
 
 func main() {
 	load_envrionment()
+
+	// althorugh godotenv loads all environment variables, gin doesn't see them
+	if os.Getenv("GIN_MODE") == "release" {
+		gin.SetMode(gin.ReleaseMode)
+	}
 
 	db := connect_db()
 	create_tables(db)
