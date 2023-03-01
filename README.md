@@ -1,6 +1,10 @@
-## How to run
-First, you need postgresql server.
-You can either install and configure it manually, or use a provided `docker-compose.yaml` file.
-For the second case, navigate to directory `postgres`, and run  
-`docker compose up -d`  
-Now, go to project root, and simply run `go run .`
+This is a REST api, that allows for uploading and managing books in digital library.
+
+## Running
+### Database
+There is a `docker-compose.yaml` config in directory `postgres`, which you can use.
+Change the default login credentials if you want
+### .env
+Run `cp .env.example .env`, and edit the environemnt variables as needed
+### Run!
+Install [Go](https://go.dev/) and run `go run .`
