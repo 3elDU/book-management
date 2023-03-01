@@ -10,8 +10,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
+
+func load_envrionment() {
+	if err := godotenv.Load(); err != nil {
+		log.Panicf("Failed to load variables from .env")
+	}
+}
 
 func connect_db() *sqlx.DB {
 	db := sqlx.MustConnect("postgres", "postgres://postgres:postgres@localhost/postgres?sslmode=disable")
@@ -47,6 +54,8 @@ func get_genre_name(db *sqlx.DB, id int) string {
 }
 
 func main() {
+	load_envrionment()
+
 	db := connect_db()
 	create_tables(db)
 
